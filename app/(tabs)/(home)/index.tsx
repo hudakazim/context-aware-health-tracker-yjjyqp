@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+
+import React, { useState, useEffect, useCallback } from "react";
 import { Stack } from "expo-router";
 import { ScrollView, Pressable, StyleSheet, View, Text, Platform, Dimensions } from "react-native";
 import { IconSymbol } from "@/components/IconSymbol";
@@ -22,6 +23,45 @@ export default function HomeScreen() {
   });
   const [isTracking, setIsTracking] = useState(false);
   const [showWelcome, setShowWelcome] = useState(true);
+
+  const loadTodayStats = useCallback(async () => {
+    try {
+      const stats = await HealthDataService.getTodayStats();
+      setTodayStats(stats);
+    } catch (error) {
+      console.log('Error loading stats:', error);
+    }
+  }, []);
+
+  const updateStats = useCallback(async (activity: string) => {
+    try {
+      await HealthDataService.recordActivity(activity);
+      const newStats = await HealthDataService.getTodayStats();
+      setTodayStats(newStats);
+      
+      // Check for goal achievements and send notifications
+      checkGoalAchievements(newStats);
+    } catch (error) {
+      console.log('Error updating stats:', error);
+    }
+  }, [todayStats]);
+
+  const checkGoalAchievements = (stats: any) => {
+    // Check step goal (10,000 steps)
+    if (stats.steps >= 10000 && todayStats.steps < 10000) {
+      NotificationService.sendGoalAchievement('steps', stats.steps);
+    }
+    
+    // Check active minutes goal (30 minutes)
+    if (stats.activeMinutes >= 30 && todayStats.activeMinutes < 30) {
+      NotificationService.sendGoalAchievement('activeMinutes', stats.activeMinutes);
+    }
+    
+    // Check calorie goal (2000 calories)
+    if (stats.calories >= 2000 && todayStats.calories < 2000) {
+      NotificationService.sendGoalAchievement('calories', stats.calories);
+    }
+  };
 
   useEffect(() => {
     // Initialize services
@@ -50,46 +90,7 @@ export default function HomeScreen() {
       ActivityRecognitionService.cleanup();
       NotificationService.cleanup();
     };
-  }, []);
-
-  const loadTodayStats = async () => {
-    try {
-      const stats = await HealthDataService.getTodayStats();
-      setTodayStats(stats);
-    } catch (error) {
-      console.log('Error loading stats:', error);
-    }
-  };
-
-  const updateStats = async (activity: string) => {
-    try {
-      await HealthDataService.recordActivity(activity);
-      const newStats = await HealthDataService.getTodayStats();
-      setTodayStats(newStats);
-      
-      // Check for goal achievements and send notifications
-      checkGoalAchievements(newStats);
-    } catch (error) {
-      console.log('Error updating stats:', error);
-    }
-  };
-
-  const checkGoalAchievements = (stats: any) => {
-    // Check step goal (10,000 steps)
-    if (stats.steps >= 10000 && todayStats.steps < 10000) {
-      NotificationService.sendGoalAchievement('steps', stats.steps);
-    }
-    
-    // Check active minutes goal (30 minutes)
-    if (stats.activeMinutes >= 30 && todayStats.activeMinutes < 30) {
-      NotificationService.sendGoalAchievement('activeMinutes', stats.activeMinutes);
-    }
-    
-    // Check calorie goal (2000 calories)
-    if (stats.calories >= 2000 && todayStats.calories < 2000) {
-      NotificationService.sendGoalAchievement('calories', stats.calories);
-    }
-  };
+  }, [loadTodayStats, updateStats]);
 
   const toggleTracking = () => {
     if (isTracking) {
