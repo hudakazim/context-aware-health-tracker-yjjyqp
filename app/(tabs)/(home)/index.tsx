@@ -64,16 +64,26 @@ export default function HomeScreen() {
   };
 
   useEffect(() => {
-    // Initialize services
-    ActivityRecognitionService.initialize();
-    HealthDataService.initialize();
-    NotificationService.initialize();
-    
-    // Load today's stats
-    loadTodayStats();
-    
-    // Schedule daily reminders
-    NotificationService.scheduleDailyReminders();
+    const initializeServices = async () => {
+      try {
+        // Initialize services
+        await ActivityRecognitionService.initialize();
+        await HealthDataService.initialize();
+        await NotificationService.initialize();
+        
+        // Load today's stats
+        await loadTodayStats();
+        
+        // Schedule daily reminders
+        await NotificationService.scheduleDailyReminders();
+        
+        console.log('All services initialized successfully');
+      } catch (error) {
+        console.error('Error initializing services:', error);
+      }
+    };
+
+    initializeServices();
     
     // Subscribe to activity updates
     const unsubscribe = ActivityRecognitionService.subscribe((activity) => {
