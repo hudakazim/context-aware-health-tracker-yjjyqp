@@ -1,77 +1,127 @@
-import React from "react";
-import { Stack, Link } from "expo-router";
-import { FlatList, Pressable, StyleSheet, View, Text, Alert, Platform } from "react-native";
+import React, { useState, useEffect } from "react";
+import { Stack } from "expo-router";
+import { ScrollView, Pressable, StyleSheet, View, Text, Platform, Dimensions } from "react-native";
 import { IconSymbol } from "@/components/IconSymbol";
-import { GlassView } from "expo-glass-effect";
-import { useTheme } from "@react-navigation/native";
+import { colors } from "@/styles/commonStyles";
+import { ActivityCard } from "@/components/ActivityCard";
+import { StatsCard } from "@/components/StatsCard";
+import { WelcomeModal } from "@/components/WelcomeModal";
+import ActivityRecognitionService from "@/services/ActivityRecognitionService";
+import HealthDataService from "@/services/HealthDataService";
+import NotificationService from "@/services/NotificationService";
 
-const ICON_COLOR = "#007AFF";
+const { width } = Dimensions.get('window');
 
 export default function HomeScreen() {
-  const theme = useTheme();
-  const modalDemos = [
-    {
-      title: "Standard Modal",
-      description: "Full screen modal presentation",
-      route: "/modal",
-      color: "#007AFF",
-    },
-    {
-      title: "Form Sheet",
-      description: "Bottom sheet with detents and grabber",
-      route: "/formsheet",
-      color: "#34C759",
-    },
-    {
-      title: "Transparent Modal",
-      description: "Overlay without obscuring background",
-      route: "/transparent-modal",
-      color: "#FF9500",
-    }
-  ];
+  const [currentActivity, setCurrentActivity] = useState<string>('idle');
+  const [todayStats, setTodayStats] = useState({
+    steps: 0,
+    calories: 0,
+    activeMinutes: 0,
+    sleepHours: 0,
+  });
+  const [isTracking, setIsTracking] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(true);
 
-  const renderModalDemo = ({ item }: { item: (typeof modalDemos)[0] }) => (
-    <GlassView style={[
-      styles.demoCard,
-      Platform.OS !== 'ios' && { backgroundColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }
-    ]} glassEffectStyle="regular">
-      <View style={[styles.demoIcon, { backgroundColor: item.color }]}>
-        <IconSymbol name="square.grid.3x3" color="white" size={24} />
-      </View>
-      <View style={styles.demoContent}>
-        <Text style={[styles.demoTitle, { color: theme.colors.text }]}>{item.title}</Text>
-        <Text style={[styles.demoDescription, { color: theme.dark ? '#98989D' : '#666' }]}>{item.description}</Text>
-      </View>
-      <Link href={item.route as any} asChild>
-        <Pressable>
-          <GlassView style={[
-            styles.tryButton,
-            Platform.OS !== 'ios' && { backgroundColor: theme.dark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)' }
-          ]} glassEffectStyle="clear">
-            <Text style={[styles.tryButtonText, { color: theme.colors.primary }]}>Try It</Text>
-          </GlassView>
-        </Pressable>
-      </Link>
-    </GlassView>
-  );
+  useEffect(() => {
+    // Initialize services
+    ActivityRecognitionService.initialize();
+    HealthDataService.initialize();
+    NotificationService.initialize();
+    
+    // Load today's stats
+    loadTodayStats();
+    
+    // Schedule daily reminders
+    NotificationService.scheduleDailyReminders();
+    
+    // Subscribe to activity updates
+    const unsubscribe = ActivityRecognitionService.subscribe((activity) => {
+      console.log('Activity detected:', activity);
+      setCurrentActivity(activity);
+      updateStats(activity);
+      
+      // Notify notification service of activity
+      NotificationService.onActivityDetected(activity);
+    });
+
+    return () => {
+      unsubscribe();
+      ActivityRecognitionService.cleanup();
+      NotificationService.cleanup();
+    };
+  }, []);
+
+  const loadTodayStats = async () => {
+    try {
+      const stats = await HealthDataService.getTodayStats();
+      setTodayStats(stats);
+    } catch (error) {
+      console.log('Error loading stats:', error);
+    }
+  };
+
+  const updateStats = async (activity: string) => {
+    try {
+      await HealthDataService.recordActivity(activity);
+      const newStats = await HealthDataService.getTodayStats();
+      setTodayStats(newStats);
+      
+      // Check for goal achievements and send notifications
+      checkGoalAchievements(newStats);
+    } catch (error) {
+      console.log('Error updating stats:', error);
+    }
+  };
+
+  const checkGoalAchievements = (stats: any) => {
+    // Check step goal (10,000 steps)
+    if (stats.steps >= 10000 && todayStats.steps < 10000) {
+      NotificationService.sendGoalAchievement('steps', stats.steps);
+    }
+    
+    // Check active minutes goal (30 minutes)
+    if (stats.activeMinutes >= 30 && todayStats.activeMinutes < 30) {
+      NotificationService.sendGoalAchievement('activeMinutes', stats.activeMinutes);
+    }
+    
+    // Check calorie goal (2000 calories)
+    if (stats.calories >= 2000 && todayStats.calories < 2000) {
+      NotificationService.sendGoalAchievement('calories', stats.calories);
+    }
+  };
+
+  const toggleTracking = () => {
+    if (isTracking) {
+      ActivityRecognitionService.stopTracking();
+    } else {
+      ActivityRecognitionService.startTracking();
+    }
+    setIsTracking(!isTracking);
+  };
 
   const renderHeaderRight = () => (
     <Pressable
-      onPress={() => Alert.alert("Not Implemented", "This feature is not implemented yet")}
+      onPress={toggleTracking}
       style={styles.headerButtonContainer}
     >
-      <IconSymbol name="plus" color={theme.colors.primary} />
+      <IconSymbol 
+        name={isTracking ? "pause.fill" : "play.fill"} 
+        color={colors.primary} 
+        size={20}
+      />
     </Pressable>
   );
 
   const renderHeaderLeft = () => (
     <Pressable
-      onPress={() => Alert.alert("Not Implemented", "This feature is not implemented yet")}
+      onPress={() => console.log('Settings pressed')}
       style={styles.headerButtonContainer}
     >
       <IconSymbol
         name="gear"
-        color={theme.colors.primary}
+        color={colors.primary}
+        size={20}
       />
     </Pressable>
   );
@@ -81,23 +131,81 @@ export default function HomeScreen() {
       {Platform.OS === 'ios' && (
         <Stack.Screen
           options={{
-            title: "Building the app...",
+            title: "Health Tracker",
             headerRight: renderHeaderRight,
             headerLeft: renderHeaderLeft,
           }}
         />
       )}
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <FlatList
-          data={modalDemos}
-          renderItem={renderModalDemo}
-          keyExtractor={(item) => item.route}
+      <View style={styles.container}>
+        <ScrollView
           contentContainerStyle={[
-            styles.listContainer,
-            Platform.OS !== 'ios' && styles.listContainerWithTabBar
+            styles.scrollContainer,
+            Platform.OS !== 'ios' && styles.scrollContainerWithTabBar
           ]}
-          contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
+        >
+          {/* Current Activity Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Current Activity</Text>
+            <ActivityCard 
+              activity={currentActivity}
+              isTracking={isTracking}
+            />
+          </View>
+
+          {/* Today's Stats Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Today&apos;s Progress</Text>
+            <View style={styles.statsGrid}>
+              <StatsCard
+                title="Steps"
+                value={todayStats.steps.toString()}
+                icon="figure.walk"
+                color={colors.primary}
+                target="10,000"
+              />
+              <StatsCard
+                title="Calories"
+                value={todayStats.calories.toString()}
+                icon="flame.fill"
+                color={colors.accent}
+                target="2,000"
+              />
+              <StatsCard
+                title="Active Minutes"
+                value={todayStats.activeMinutes.toString()}
+                icon="timer"
+                color={colors.secondary}
+                target="30"
+              />
+              <StatsCard
+                title="Sleep Hours"
+                value={todayStats.sleepHours.toFixed(1)}
+                icon="moon.fill"
+                color={colors.textSecondary}
+                target="8.0"
+              />
+            </View>
+          </View>
+
+          {/* Privacy Notice */}
+          <View style={styles.privacySection}>
+            <View style={styles.privacyHeader}>
+              <IconSymbol name="lock.fill" color={colors.secondary} size={16} />
+              <Text style={styles.privacyTitle}>Privacy First</Text>
+            </View>
+            <Text style={styles.privacyText}>
+              All your health data is processed locally on your device. 
+              No data is sent to external servers.
+            </Text>
+          </View>
+        </ScrollView>
+
+        {/* Welcome Modal */}
+        <WelcomeModal 
+          visible={showWelcome} 
+          onClose={() => setShowWelcome(false)} 
         />
       </View>
     </>
@@ -107,55 +215,54 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    // backgroundColor handled dynamically
+    backgroundColor: colors.background,
   },
-  listContainer: {
+  scrollContainer: {
     paddingVertical: 16,
     paddingHorizontal: 16,
   },
-  listContainerWithTabBar: {
+  scrollContainerWithTabBar: {
     paddingBottom: 100, // Extra padding for floating tab bar
   },
-  demoCard: {
-    borderRadius: 12,
-    padding: 16,
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.text,
     marginBottom: 12,
+  },
+  statsGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
-  },
-  demoIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  demoContent: {
-    flex: 1,
-  },
-  demoTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 4,
-    // color handled dynamically
-  },
-  demoDescription: {
-    fontSize: 14,
-    lineHeight: 18,
-    // color handled dynamically
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
   headerButtonContainer: {
     padding: 6,
   },
-  tryButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
+  privacySection: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: colors.grey,
   },
-  tryButtonText: {
-    fontSize: 14,
+  privacyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  privacyTitle: {
+    fontSize: 16,
     fontWeight: '600',
-    // color handled dynamically
+    color: colors.text,
+    marginLeft: 8,
+  },
+  privacyText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 20,
   },
 });
